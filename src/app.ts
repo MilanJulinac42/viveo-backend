@@ -19,8 +19,22 @@ app.use(helmet());
 // HTTP request logging (Winston-backed)
 app.use(httpLogger);
 
-// CORS
-app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));
+// CORS — support multiple origins (comma-separated in env) + Vercel previews
+const allowedOrigins = env.FRONTEND_URL.split(',').map((o) => o.trim());
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+      // Allow exact match
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      // Allow Vercel preview deployments
+      if (origin.endsWith('.vercel.app')) return callback(null, true);
+      callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+  }),
+);
 
 // Body parsing sa limitom od 10KB (dovoljno za JSON, sprečava abuse)
 app.use(express.json({ limit: '10kb' }));
