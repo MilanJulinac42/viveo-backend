@@ -1,4 +1,17 @@
 import rateLimit from 'express-rate-limit';
+import logger from '../config/logger.js';
+
+/**
+ * NOTE: express-rate-limit koristi in-memory storage po defaultu.
+ * Za produkciju sa više instanci, koristiti Redis store:
+ *
+ *   npm install rate-limit-redis ioredis
+ *
+ *   import RedisStore from 'rate-limit-redis';
+ *   import Redis from 'ioredis';
+ *   const redis = new Redis(process.env.REDIS_URL);
+ *   store: new RedisStore({ sendCommand: (...args) => redis.call(...args) })
+ */
 
 // Opšti limiter za sve rute — 100 zahteva po minutu po IP
 export const generalLimiter = rateLimit({
@@ -6,12 +19,20 @@ export const generalLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    error: {
-      message: 'Previše zahteva, pokušajte ponovo za minut',
-      code: 'RATE_LIMIT_EXCEEDED',
-    },
+  handler: (req, res) => {
+    logger.warn('Rate limit exceeded (general)', {
+      requestId: req.requestId,
+      ip: req.ip,
+      method: req.method,
+      url: req.originalUrl,
+    });
+    res.status(429).json({
+      success: false,
+      error: {
+        message: 'Previše zahteva, pokušajte ponovo za minut',
+        code: 'RATE_LIMIT_EXCEEDED',
+      },
+    });
   },
 });
 
@@ -21,12 +42,20 @@ export const authLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    error: {
-      message: 'Previše pokušaja prijave, pokušajte ponovo za 15 minuta',
-      code: 'AUTH_RATE_LIMIT',
-    },
+  handler: (req, res) => {
+    logger.warn('Auth rate limit exceeded', {
+      requestId: req.requestId,
+      ip: req.ip,
+      email: req.body?.email,
+      userAgent: req.headers['user-agent'],
+    });
+    res.status(429).json({
+      success: false,
+      error: {
+        message: 'Previše pokušaja prijave, pokušajte ponovo za 15 minuta',
+        code: 'AUTH_RATE_LIMIT',
+      },
+    });
   },
 });
 
@@ -36,11 +65,19 @@ export const createLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    error: {
-      message: 'Previše zahteva za kreiranje, pokušajte ponovo za minut',
-      code: 'CREATE_RATE_LIMIT',
-    },
+  handler: (req, res) => {
+    logger.warn('Create rate limit exceeded', {
+      requestId: req.requestId,
+      ip: req.ip,
+      method: req.method,
+      url: req.originalUrl,
+    });
+    res.status(429).json({
+      success: false,
+      error: {
+        message: 'Previše zahteva za kreiranje, pokušajte ponovo za minut',
+        code: 'CREATE_RATE_LIMIT',
+      },
+    });
   },
 });

@@ -1,19 +1,23 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import { env } from './config/env.js';
+import { requestIdMiddleware } from './middleware/requestId.js';
+import { httpLogger } from './middleware/httpLogger.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { generalLimiter } from './middleware/rateLimiter.js';
 import apiRouter from './routes/index.js';
 
 const app = express();
 
+// Assign unique request ID (must be first)
+app.use(requestIdMiddleware);
+
 // Security headers
 app.use(helmet());
 
-// Request logging
-app.use(morgan('short'));
+// HTTP request logging (Winston-backed)
+app.use(httpLogger);
 
 // CORS
 app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));
