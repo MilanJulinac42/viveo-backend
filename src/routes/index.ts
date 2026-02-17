@@ -7,6 +7,7 @@ import ordersRoutes from './orders.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import applicationsRoutes from './applications.routes.js';
 import reviewsRoutes from './reviews.routes.js';
+import adminRoutes from './admin.routes.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const router = Router();
@@ -23,5 +24,6 @@ router.use('/orders', requireAuth, ordersRoutes);
 router.use('/dashboard', requireAuth, requireRole('star'), dashboardRoutes);
 router.use('/applications', applicationsRoutes);
 router.use('/reviews', requireAuth, reviewsRoutes);
+router.use('/admin', requireAuth, requireRole('admin'), adminRoutes);
 
 export default router;
