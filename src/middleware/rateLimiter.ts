@@ -59,6 +59,29 @@ export const authLimiter = rateLimit({
   },
 });
 
+// Limiter za video upload — 5 po minutu (resurski zahtevan)
+export const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    logger.warn('Upload rate limit exceeded', {
+      requestId: req.requestId,
+      ip: req.ip,
+      method: req.method,
+      url: req.originalUrl,
+    });
+    res.status(429).json({
+      success: false,
+      error: {
+        message: 'Previše upload zahteva, pokušajte ponovo za minut',
+        code: 'UPLOAD_RATE_LIMIT',
+      },
+    });
+  },
+});
+
 // Limiter za kreiranje resursa — 20 po minutu
 export const createLimiter = rateLimit({
   windowMs: 60 * 1000,

@@ -9,5 +9,6 @@ const router = Router();
 router.post('/', createLimiter, validate(createOrderSchema), ordersController.createOrder);
 router.get('/', ordersController.listOrders);
 router.get('/:id', ordersController.getOrderById);
+router.get('/:id/video', ordersController.getVideoSignedUrl);
 
 export default router;

@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { success, error, notFound, forbidden } from '../utils/apiResponse.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 import type { CreateOrderInput } from '../schemas/order.schema.js';
+import { sendNewRequestNotification } from '../services/emailService.js';
 
 export async function createOrder(req: Request, res: Response) {
   const user = (req as AuthenticatedRequest).user;
@@ -11,7 +12,7 @@ export async function createOrder(req: Request, res: Response) {
 
   const { data: celebrity } = await supabaseAdmin
     .from('celebrities')
-    .select('id, price, response_time, accepting_requests')
+    .select('id, name, profile_id, price, response_time, accepting_requests')
     .eq('slug', celebritySlug)
     .single();
 
@@ -27,7 +28,7 @@ export async function createOrder(req: Request, res: Response) {
 
   const { data: videoType } = await supabaseAdmin
     .from('video_types')
-    .select('id')
+    .select('id, title')
     .eq('id', videoTypeId)
     .eq('celebrity_id', celebrity.id)
     .single();
@@ -59,6 +60,31 @@ export async function createOrder(req: Request, res: Response) {
   if (dbError) {
     error(res, 'Greška pri kreiranju porudžbine', 'DB_ERROR', 500);
     return;
+  }
+
+  // Fire-and-forget: notify star about new order
+  const { data: starProfile } = await supabaseAdmin
+    .from('profiles')
+    .select('email')
+    .eq('id', celebrity.profile_id)
+    .single();
+
+  if (starProfile?.email) {
+    sendNewRequestNotification(starProfile.email, {
+      starName: celebrity.name,
+      buyerName,
+      videoType: videoType.title,
+      recipientName,
+      instructions: instructions || '',
+      price: celebrity.price,
+      deadline: new Date(order.deadline).toLocaleDateString('sr-RS', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    });
   }
 
   success(res, {
@@ -146,4 +172,41 @@ export async function getOrderById(req: Request, res: Response) {
     deadline: order.deadline,
     videoUrl: order.video_url,
   });
+}
+
+export async function getVideoSignedUrl(req: Request, res: Response) {
+  const user = (req as AuthenticatedRequest).user;
+  const { id } = req.params;
+
+  const { data: order } = await supabaseAdmin
+    .from('orders')
+    .select('buyer_id, status, video_url')
+    .eq('id', id)
+    .single();
+
+  if (!order) {
+    notFound(res, 'Porudžbina');
+    return;
+  }
+
+  if (order.buyer_id !== user.id) {
+    forbidden(res);
+    return;
+  }
+
+  if (order.status !== 'completed' || !order.video_url) {
+    error(res, 'Video još nije dostupan', 'VIDEO_NOT_READY');
+    return;
+  }
+
+  const { data: signedUrlData, error: storageError } = await supabaseAdmin.storage
+    .from('videos')
+    .createSignedUrl(order.video_url, 3600); // 1 hour expiry
+
+  if (storageError || !signedUrlData) {
+    error(res, 'Greška pri generisanju linka za video', 'STORAGE_ERROR', 500);
+    return;
+  }
+
+  success(res, { signedUrl: signedUrlData.signedUrl });
 }

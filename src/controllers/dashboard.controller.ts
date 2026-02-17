@@ -3,6 +3,8 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { success, error, notFound } from '../utils/apiResponse.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 import type { UpdateRequestStatusInput, UpdateProfileInput, UpdateAvailabilityInput } from '../schemas/dashboard.schema.js';
+import { sendRequestApproved, sendRequestRejected, sendVideoReady } from '../services/emailService.js';
+import logger from '../config/logger.js';
 
 async function getCelebrityForUser(userId: string) {
   const { data } = await supabaseAdmin
@@ -71,7 +73,7 @@ export async function updateRequestStatus(req: Request, res: Response) {
 
   const { data: order } = await supabaseAdmin
     .from('orders')
-    .select('status, celebrity_id')
+    .select('status, celebrity_id, buyer_email, buyer_name, recipient_name, video_type_id')
     .eq('id', id)
     .single();
 
@@ -80,9 +82,9 @@ export async function updateRequestStatus(req: Request, res: Response) {
     return;
   }
 
+  // completed is only reachable via video upload endpoint
   const validTransitions: Record<string, string[]> = {
     pending: ['approved', 'rejected'],
-    approved: ['completed'],
   };
 
   if (!validTransitions[order.status]?.includes(newStatus)) {
@@ -98,6 +100,32 @@ export async function updateRequestStatus(req: Request, res: Response) {
   if (dbError) {
     error(res, 'Greška pri ažuriranju statusa', 'DB_ERROR', 500);
     return;
+  }
+
+  // Fire-and-forget: send email notification to buyer
+  const { data: videoTypeData } = await supabaseAdmin
+    .from('video_types')
+    .select('title')
+    .eq('id', order.video_type_id)
+    .single();
+
+  const { data: celebrityData } = await supabaseAdmin
+    .from('celebrities')
+    .select('name')
+    .eq('id', celebrity.id)
+    .single();
+
+  const emailData = {
+    buyerName: order.buyer_name,
+    starName: celebrityData?.name || '',
+    videoType: videoTypeData?.title || '',
+    recipientName: order.recipient_name,
+  };
+
+  if (newStatus === 'approved') {
+    sendRequestApproved(order.buyer_email, emailData);
+  } else if (newStatus === 'rejected') {
+    sendRequestRejected(order.buyer_email, emailData);
   }
 
   success(res, { id, status: newStatus });
@@ -231,6 +259,111 @@ export async function updateAvailability(req: Request, res: Response) {
   }
 
   success(res, { message: 'Dostupnost ažurirana' });
+}
+
+export async function uploadVideo(req: Request, res: Response) {
+  const user = (req as AuthenticatedRequest).user;
+  const { id } = req.params;
+
+  const celebrity = await getCelebrityForUser(user.id);
+  if (!celebrity) {
+    notFound(res, 'Profil zvezde');
+    return;
+  }
+
+  if (!req.file) {
+    error(res, 'Video fajl je obavezan', 'NO_FILE');
+    return;
+  }
+
+  // Fetch order with all needed fields
+  const { data: order } = await supabaseAdmin
+    .from('orders')
+    .select('status, celebrity_id, buyer_email, buyer_name, recipient_name, video_type_id')
+    .eq('id', id)
+    .single();
+
+  if (!order || order.celebrity_id !== celebrity.id) {
+    notFound(res, 'Zahtev');
+    return;
+  }
+
+  if (order.status !== 'approved') {
+    error(res, 'Video se može uploadovati samo za prihvaćene zahteve', 'INVALID_STATUS');
+    return;
+  }
+
+  // Determine file extension from mimetype
+  const extMap: Record<string, string> = {
+    'video/mp4': 'mp4',
+    'video/webm': 'webm',
+    'video/quicktime': 'mov',
+  };
+  const ext = extMap[req.file.mimetype] || 'mp4';
+  const storagePath = `videos/${celebrity.id}/${id}.${ext}`;
+
+  // Upload to Supabase Storage
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from('videos')
+    .upload(storagePath, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    logger.error('Video upload to storage failed', {
+      requestId: req.requestId,
+      orderId: id,
+      error: uploadError.message,
+    });
+    error(res, 'Greška pri uploadu videa', 'UPLOAD_FAILED', 500);
+    return;
+  }
+
+  // Update order status to completed + set video_url
+  const { error: dbError } = await supabaseAdmin
+    .from('orders')
+    .update({ status: 'completed', video_url: storagePath })
+    .eq('id', id);
+
+  if (dbError) {
+    logger.error('Order update after video upload failed', {
+      requestId: req.requestId,
+      orderId: id,
+      error: dbError.message,
+    });
+    error(res, 'Greška pri ažuriranju porudžbine', 'DB_ERROR', 500);
+    return;
+  }
+
+  // Fire-and-forget: notify buyer that video is ready
+  const { data: videoTypeData } = await supabaseAdmin
+    .from('video_types')
+    .select('title')
+    .eq('id', order.video_type_id)
+    .single();
+
+  const { data: celebrityData } = await supabaseAdmin
+    .from('celebrities')
+    .select('name')
+    .eq('id', celebrity.id)
+    .single();
+
+  sendVideoReady(order.buyer_email, {
+    buyerName: order.buyer_name,
+    starName: celebrityData?.name || '',
+    videoType: videoTypeData?.title || '',
+    recipientName: order.recipient_name,
+  });
+
+  logger.info('Video uploaded successfully', {
+    requestId: req.requestId,
+    orderId: id,
+    celebrityId: celebrity.id,
+    fileSize: req.file.size,
+  });
+
+  success(res, { id, status: 'completed', videoUrl: storagePath });
 }
 
 export async function updateProfile(req: Request, res: Response) {
