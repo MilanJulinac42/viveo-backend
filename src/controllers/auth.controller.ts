@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { success, error } from '../utils/apiResponse.js';
 import { logSecurityEvent } from '../utils/securityLogger.js';
+import { sendWelcomeEmail } from '../services/emailService.js';
 import type { RegisterInput, LoginInput } from '../schemas/auth.schema.js';
 
 export async function register(req: Request, res: Response) {
@@ -55,6 +56,9 @@ export async function register(req: Request, res: Response) {
     requestId: req.requestId,
     details: `New ${accountType} account registered`,
   });
+
+  // Fire-and-forget: send welcome email
+  sendWelcomeEmail(email, { userName: fullName });
 
   success(res, {
     user: {

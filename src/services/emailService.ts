@@ -5,10 +5,26 @@ import {
   requestApprovedTemplate,
   videoReadyTemplate,
   requestRejectedTemplate,
+  newMerchOrderTemplate,
+  merchOrderConfirmedTemplate,
+  merchOrderShippedTemplate,
+  newDigitalOrderTemplate,
+  digitalOrderConfirmedTemplate,
+  digitalOrderCompletedTemplate,
+  welcomeEmailTemplate,
+  newReviewNotificationTemplate,
   type NewRequestData,
   type RequestApprovedData,
   type VideoReadyData,
   type RequestRejectedData,
+  type NewMerchOrderData,
+  type MerchOrderConfirmedData,
+  type MerchOrderShippedData,
+  type NewDigitalOrderData,
+  type DigitalOrderConfirmedData,
+  type DigitalOrderCompletedData,
+  type WelcomeEmailData,
+  type NewReviewNotificationData,
 } from '../utils/emailTemplates.js';
 
 // ---------------------------------------------------------------------------
@@ -68,4 +84,52 @@ export function sendVideoReady(buyerEmail: string, data: VideoReadyData): void {
 export function sendRequestRejected(buyerEmail: string, data: RequestRejectedData): void {
   const { subject, html } = requestRejectedTemplate(data);
   sendEmail(buyerEmail, subject, html);
+}
+
+/** Notify star about a new merch order */
+export function sendNewMerchOrderNotification(starEmail: string, data: NewMerchOrderData): void {
+  const { subject, html } = newMerchOrderTemplate(data);
+  sendEmail(starEmail, subject, html);
+}
+
+/** Notify buyer that their merch order was confirmed */
+export function sendMerchOrderConfirmed(buyerEmail: string, data: MerchOrderConfirmedData): void {
+  const { subject, html } = merchOrderConfirmedTemplate(data);
+  sendEmail(buyerEmail, subject, html);
+}
+
+/** Notify buyer that their merch order was shipped */
+export function sendMerchOrderShipped(buyerEmail: string, data: MerchOrderShippedData): void {
+  const { subject, html } = merchOrderShippedTemplate(data);
+  sendEmail(buyerEmail, subject, html);
+}
+
+/** Notify star about a new digital order */
+export function sendNewDigitalOrderNotification(starEmail: string, data: NewDigitalOrderData): void {
+  const { subject, html } = newDigitalOrderTemplate(data);
+  sendEmail(starEmail, subject, html);
+}
+
+/** Notify buyer that their digital order was confirmed */
+export function sendDigitalOrderConfirmed(buyerEmail: string, data: DigitalOrderConfirmedData): void {
+  const { subject, html } = digitalOrderConfirmedTemplate(data);
+  sendEmail(buyerEmail, subject, html);
+}
+
+/** Notify buyer that their digital product is ready for download */
+export function sendDigitalOrderCompleted(buyerEmail: string, data: DigitalOrderCompletedData): void {
+  const { subject, html } = digitalOrderCompletedTemplate(data);
+  sendEmail(buyerEmail, subject, html);
+}
+
+/** Send welcome email to newly registered user */
+export function sendWelcomeEmail(email: string, data: WelcomeEmailData): void {
+  const { subject, html } = welcomeEmailTemplate(data);
+  sendEmail(email, subject, html);
+}
+
+/** Notify star about a new review on their content */
+export function sendNewReviewNotification(starEmail: string, data: NewReviewNotificationData): void {
+  const { subject, html } = newReviewNotificationTemplate(data);
+  sendEmail(starEmail, subject, html);
 }

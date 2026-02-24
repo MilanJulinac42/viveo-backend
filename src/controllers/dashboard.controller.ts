@@ -366,6 +366,102 @@ export async function uploadVideo(req: Request, res: Response) {
   success(res, { id, status: 'completed', videoUrl: storagePath });
 }
 
+export async function uploadAvatar(req: Request, res: Response) {
+  const user = (req as AuthenticatedRequest).user;
+  const celebrity = await getCelebrityForUser(user.id);
+
+  if (!celebrity) {
+    notFound(res, 'Profil zvezde');
+    return;
+  }
+
+  if (!req.file) {
+    error(res, 'Slika je obavezna', 'NO_FILE');
+    return;
+  }
+
+  const extMap: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  };
+  const ext = extMap[req.file.mimetype] || 'jpg';
+  const storagePath = `${celebrity.id}/${Date.now()}.${ext}`;
+
+  // Delete old avatar if exists
+  const { data: oldCeleb } = await supabaseAdmin
+    .from('celebrities')
+    .select('image')
+    .eq('id', celebrity.id)
+    .single();
+
+  if (oldCeleb?.image) {
+    // Extract path from full URL if stored as URL
+    const oldUrl = oldCeleb.image as string;
+    const bucketPrefix = '/celebrity-avatars/';
+    const idx = oldUrl.indexOf(bucketPrefix);
+    if (idx !== -1) {
+      const oldPath = oldUrl.substring(idx + bucketPrefix.length);
+      await supabaseAdmin.storage.from('celebrity-avatars').remove([oldPath]);
+    }
+  }
+
+  // Upload new avatar
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from('celebrity-avatars')
+    .upload(storagePath, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: true,
+    });
+
+  if (uploadError) {
+    logger.error('Avatar upload to storage failed', {
+      requestId: req.requestId,
+      celebrityId: celebrity.id,
+      error: uploadError.message,
+    });
+    error(res, 'Greška pri uploadu slike', 'UPLOAD_FAILED', 500);
+    return;
+  }
+
+  // Get public URL
+  const { data: publicUrlData } = supabaseAdmin.storage
+    .from('celebrity-avatars')
+    .getPublicUrl(storagePath);
+
+  const imageUrl = publicUrlData.publicUrl;
+
+  // Update celebrities.image
+  const { error: celebError } = await supabaseAdmin
+    .from('celebrities')
+    .update({ image: imageUrl })
+    .eq('id', celebrity.id);
+
+  if (celebError) {
+    logger.error('Celebrity image update failed', {
+      requestId: req.requestId,
+      celebrityId: celebrity.id,
+      error: celebError.message,
+    });
+    error(res, 'Greška pri ažuriranju profila', 'DB_ERROR', 500);
+    return;
+  }
+
+  // Update profiles.avatar_url
+  await supabaseAdmin
+    .from('profiles')
+    .update({ avatar_url: imageUrl })
+    .eq('id', user.id);
+
+  logger.info('Avatar uploaded successfully', {
+    requestId: req.requestId,
+    celebrityId: celebrity.id,
+    fileSize: req.file.size,
+  });
+
+  success(res, { imageUrl });
+}
+
 export async function updateProfile(req: Request, res: Response) {
   const user = (req as AuthenticatedRequest).user;
   const celebrity = await getCelebrityForUser(user.id);

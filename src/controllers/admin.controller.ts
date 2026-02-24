@@ -17,6 +17,12 @@ export async function getStats(_req: AuthenticatedRequest, res: Response) {
     pendingAppsResult,
     recentOrdersResult,
     recentAppsResult,
+    productsResult,
+    merchOrdersResult,
+    merchRevenueResult,
+    digitalProductsResult,
+    digitalOrdersResult,
+    digitalRevenueResult,
   ] = await Promise.all([
     supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true }),
     supabaseAdmin.from('celebrities').select('id', { count: 'exact', head: true }),
@@ -48,6 +54,26 @@ export async function getStats(_req: AuthenticatedRequest, res: Response) {
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
       .limit(3),
+    supabaseAdmin.from('products').select('id', { count: 'exact', head: true }),
+    supabaseAdmin
+      .from('merch_orders')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', startOfMonth),
+    supabaseAdmin
+      .from('merch_orders')
+      .select('total_price')
+      .in('status', ['confirmed', 'shipped', 'delivered'])
+      .gte('created_at', startOfMonth),
+    supabaseAdmin.from('digital_products').select('id', { count: 'exact', head: true }),
+    supabaseAdmin
+      .from('digital_orders')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', startOfMonth),
+    supabaseAdmin
+      .from('digital_orders')
+      .select('price')
+      .in('status', ['confirmed', 'completed'])
+      .gte('created_at', startOfMonth),
   ]);
 
   // Daily orders for last 7 days
@@ -103,12 +129,28 @@ export async function getStats(_req: AuthenticatedRequest, res: Response) {
     })
   );
 
+  const monthlyMerchRevenue = (merchRevenueResult.data || []).reduce(
+    (sum: number, o: { total_price: number }) => sum + o.total_price,
+    0
+  );
+
+  const monthlyDigitalRevenue = (digitalRevenueResult.data || []).reduce(
+    (sum: number, o: { price: number }) => sum + o.price,
+    0
+  );
+
   success(res, {
     totalUsers: usersResult.count || 0,
     totalCelebrities: celebsResult.count || 0,
     totalOrders: ordersResult.count || 0,
     monthlyRevenue,
     pendingApplications: pendingAppsResult.count || 0,
+    totalProducts: productsResult.count || 0,
+    totalMerchOrders: merchOrdersResult.count || 0,
+    monthlyMerchRevenue,
+    totalDigitalProducts: digitalProductsResult.count || 0,
+    totalDigitalOrders: digitalOrdersResult.count || 0,
+    monthlyDigitalRevenue,
     recentOrders,
     recentApplications,
     dailyOrders,
